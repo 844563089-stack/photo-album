@@ -1,7 +1,8 @@
 {
-  "title": "大理",
-  "location": "大理",
-  "province": "云南",
+  "title": "'\u0006",
+  "location": "'\u0006",
+  "province": "云南省",
   "description": "苍山是静默的诗，洱海是流动的画。",
-  "tags": []
+  "tags": [],
+  "cover": "11.jpg"
 }
