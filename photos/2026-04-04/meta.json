@@ -1,7 +1,8 @@
 {
   "title": "青岛",
   "location": "青岛",
-  "province": "山东",
+  "province": "山东省",
   "description": "看海看多了想见人，见人见多了想看海。",
-  "tags": []
+  "tags": [],
+  "cover": "09.jpg"
 }
