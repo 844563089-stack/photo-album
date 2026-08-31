@@ -1,0 +1,365 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>阿包旅行图册 · 上传照片新手教程</title>
+<style>
+  :root {
+    --bg: #0d0d0d;
+    --surface: #161616;
+    --surface2: #1d1d1d;
+    --border: rgba(255,255,255,.09);
+    --border2: rgba(255,255,255,.16);
+    --fg: #f2f0eb;
+    --muted: #a8a49c;
+    --accent: #d4a574;
+    --accent2: #e8b98a;
+    --ok: #9cb585;
+    --warn: #e0a35c;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body {
+    background: var(--bg);
+    color: var(--fg);
+    font-family: -apple-system, BlinkMacSystemFont, "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", sans-serif;
+    font-size: 15px;
+    line-height: 1.7;
+    padding: 0 20px 80px;
+  }
+  .wrap { max-width: 860px; margin: 0 auto; }
+  header {
+    text-align: center;
+    padding: 56px 0 36px;
+  }
+  header h1 {
+    font-size: 30px;
+    font-weight: 600;
+    letter-spacing: .02em;
+    margin-bottom: 10px;
+  }
+  header p { color: var(--muted); font-size: 14px; }
+  header .steps-count {
+    display: inline-block;
+    margin-top: 14px;
+    font-size: 12px;
+    color: var(--accent);
+    border: 1px solid rgba(212,165,116,.4);
+    border-radius: 999px;
+    padding: 4px 14px;
+  }
+  .links {
+    display: flex;
+    flex-wrap: wrap;
+    justify-content: center;
+    gap: 10px;
+    margin: 18px 0 8px;
+  }
+  .links a {
+    color: var(--fg);
+    text-decoration: none;
+    font-size: 13px;
+    background: var(--surface);
+    border: .5px solid var(--border2);
+    border-radius: 999px;
+    padding: 6px 14px;
+    transition: border-color .2s, color .2s;
+  }
+  .links a:hover { border-color: var(--accent); color: var(--accent2); }
+
+  .step {
+    background: var(--surface);
+    border: .5px solid var(--border);
+    border-radius: 16px;
+    padding: 24px 26px;
+    margin: 20px 0;
+  }
+  .step-head {
+    display: flex;
+    align-items: baseline;
+    gap: 12px;
+    margin-bottom: 12px;
+  }
+  .step-num {
+    flex: 0 0 auto;
+    width: 30px; height: 30px;
+    border-radius: 50%;
+    background: rgba(212,165,116,.16);
+    border: 1px solid rgba(212,165,116,.5);
+    color: var(--accent2);
+    font-weight: 600;
+    font-size: 14px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+  }
+  .step-title { font-size: 17px; font-weight: 600; }
+  .step-tag { font-size: 11px; color: var(--muted); }
+  .step ol, .step ul { padding-left: 20px; margin: 8px 0; }
+  .step li { margin: 6px 0; }
+  .step p { margin: 8px 0; }
+
+  code {
+    font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+    font-size: 12.5px;
+    background: var(--surface2);
+    border: .5px solid var(--border);
+    border-radius: 6px;
+    padding: 2px 7px;
+    color: var(--accent2);
+  }
+  pre {
+    background: var(--surface2);
+    border: .5px solid var(--border);
+    border-radius: 10px;
+    padding: 14px 16px;
+    overflow-x: auto;
+    font-size: 12.5px;
+    line-height: 1.6;
+    margin: 10px 0;
+  }
+  pre code { background: none; border: none; padding: 0; color: #d8d4ca; }
+
+  .path-box {
+    background: var(--surface2);
+    border: .5px dashed var(--border2);
+    border-radius: 10px;
+    padding: 14px 18px;
+    font-family: ui-monospace, Menlo, monospace;
+    font-size: 12.5px;
+    color: #cfc9bd;
+    margin: 10px 0;
+  }
+  .path-box b { color: var(--accent2); font-weight: 500; }
+
+  .tip {
+    border-left: 3px solid var(--accent);
+    background: rgba(212,165,116,.08);
+    border-radius: 0 10px 10px 0;
+    padding: 10px 14px;
+    margin: 12px 0;
+    font-size: 13.5px;
+    color: var(--accent2);
+  }
+  .warn {
+    border-left: 3px solid var(--warn);
+    background: rgba(224,163,92,.08);
+    border-radius: 0 10px 10px 0;
+    padding: 10px 14px;
+    margin: 12px 0;
+    font-size: 13.5px;
+    color: #eac393;
+  }
+  .ok {
+    border-left: 3px solid var(--ok);
+    background: rgba(156,181,133,.08);
+    border-radius: 0 10px 10px 0;
+    padding: 10px 14px;
+    margin: 12px 0;
+    font-size: 13.5px;
+    color: #b9cf9f;
+  }
+  a.ext {
+    color: var(--accent2);
+    text-decoration: none;
+    border-bottom: .5px dashed rgba(212,165,116,.5);
+  }
+  a.ext:hover { border-bottom-style: solid; }
+
+  .faq .step { padding: 18px 24px; }
+  .faq h3 { font-size: 15px; font-weight: 600; margin-bottom: 6px; }
+  .faq p { color: var(--muted); font-size: 13.5px; }
+
+  footer { text-align: center; color: var(--muted); font-size: 12px; margin-top: 40px; }
+</style>
+</head>
+<body>
+<div class="wrap">
+
+<header>
+  <h1>📷 阿包旅行图册 · 上传照片教程</h1>
+  <p>方式 A：GitHub 网页直接拖文件 —— 零命令行、零工具，10 分钟上手</p>
+  <div class="links">
+    <a href="https://github.com" target="_blank" rel="noopener">GitHub 官网</a>
+    <a href="https://github.com/signup" target="_blank" rel="noopener">注册账号</a>
+    <a href="https://github.com/new" target="_blank" rel="noopener">新建仓库</a>
+    <a href="https://docs.github.com/zh/repositories/working-with-files/managing-files/adding-a-file-to-a-repository" target="_blank" rel="noopener">官方：上传文件</a>
+    <a href="https://docs.github.com/zh/repositories/working-with-files/managing-files/creating-new-files" target="_blank" rel="noopener">官方：新建文件</a>
+    <a href="https://www.jsdelivr.com/github" target="_blank" rel="noopener">jsDelivr CDN</a>
+  </div>
+  <span class="steps-count">共 6 步 · 约 10 分钟</span>
+</header>
+
+<!-- 第 1 步 -->
+<section class="step">
+  <div class="step-head">
+    <span class="step-num">1</span>
+    <span class="step-title">注册 GitHub 账号</span>
+    <span class="step-tag">只需一次 · 5 分钟</span>
+  </div>
+  <ol>
+    <li>打开官网：<a class="ext" href="https://github.com/signup" target="_blank" rel="noopener">github.com/signup</a></li>
+    <li>输入邮箱 → 设置密码 → 起一个用户名（例如 <code>abao-travel</code>）</li>
+    <li>完成邮箱验证码验证</li>
+  </ol>
+  <div class="warn">⚠️ 国内访问 GitHub 偶尔慢或打不开，属正常现象。可稍等重试，或借助网络加速工具。</div>
+</section>
+
+<!-- 第 2 步 -->
+<section class="step">
+  <div class="step-head">
+    <span class="step-num">2</span>
+    <span class="step-title">创建一个公开仓库（放照片的地方）</span>
+  </div>
+  <ol>
+    <li>打开 <a class="ext" href="https://github.com/new" target="_blank" rel="noopener">github.com/new</a></li>
+    <li><code>Repository name</code> 填：<b>photo-album</b></li>
+    <li>可见性选 <b>Public（公开）</b> —— 必须公开，网站才能免费读取</li>
+    <li>页面底部有 3 个可选选项（全部可不勾）：
+      <ul>
+        <li><b>Add README 添加 README</b> → 可以勾（GitHub 帮你建个占位 README，等下传代码时被覆盖）</li>
+        <li><b>Add .gitignore 添加 .gitignore</b> → <b>不勾</b>（项目已有自带 .gitignore）</li>
+        <li><b>Add license 添加许可证</b> → <b>推荐勾 MIT</b>（最宽松：别人署名就能用）</li>
+      </ul>
+    </li>
+    <li>点绿色 <code>Create repository 创建仓库</code></li>
+  </ol>
+  <div class="tip">💡 仓库名可以随便起，但要和网站 <code>config.js</code> 里的 <code>repo</code> 完全一致。</div>
+</section>
+
+<!-- 第 3 步 -->
+<section class="step">
+  <div class="step-head">
+    <span class="step-num">3</span>
+    <span class="step-title">把网站文件放进仓库（只做一次）</span>
+  </div>
+  <p>网站的代码文件（index.html / style.css / app.js / config.js 等）需要先放进去一次，之后就不用管了。</p>
+  <ol>
+    <li>进入你的仓库主页（<code>github.com/你的用户名/photo-album</code>）</li>
+    <li>点绿色按钮 <code>Add file</code> → <code>Upload files</code></li>
+    <li>把本地 <code>photo-album/</code> 文件夹里的这些文件拖进去：
+      <div class="path-box">
+        index.html &nbsp;·&nbsp; style.css &nbsp;·&nbsp; app.js &nbsp;·&nbsp; config.js &nbsp;·&nbsp; README.md<br>
+        <b>photos/</b>（整个文件夹一起拖，若提示空文件夹，则先执行第 4 步再回来）
+      </div>
+    </li>
+    <li>点底部绿色 <code>Commit changes</code> 提交</li>
+  </ol>
+</section>
+
+<!-- 第 4 步 -->
+<section class="step">
+  <div class="step-head">
+    <span class="step-num">4</span>
+    <span class="step-title">创建日期文件夹（以后每趟旅行一个）</span>
+    <span class="step-tag">关键技巧</span>
+  </div>
+  <p>GitHub 网页版<b>不能创建空文件夹</b>，必须带一个文件一起创建。所以我们的"文件夹" = 一个带 <code>meta.json</code> 的目录，顺便把标题/地点写进去，一举两得。</p>
+  <ol>
+    <li>仓库页面 → <code>Add file</code> → <code>Create new file</code></li>
+    <li>在文件名输入框里完整输入（带斜杠会自动建文件夹）：
+      <div class="path-box">
+        photos/<b>2026-08-31</b>/meta.json
+      </div>
+    </li>
+    <li>在下方编辑区粘贴（改你自己的信息）：
+<pre><code>{
+  "title": "东湖樱花",
+  "location": "武汉",
+  "province": "湖北",
+  "description": "三月的东湖，粉白一片。",
+  "tags": ["湖光", "城市漫步"]
+}</code></pre>
+    </li>
+    <li>点 <code>Commit changes</code> —— 此时文件夹 <code>photos/2026-08-31/</code> 就建好了</li>
+  </ol>
+  <div class="tip">💡 不想写任何信息？meta.json 里填 <code>{}</code> 也行，网站会用日期当标题正常展示。</div>
+  <div class="ok">✅ 以后每个新行程，重复第 4 步，日期换成旅行当天的日期即可。</div>
+</section>
+
+<!-- 第 5 步 -->
+<section class="step">
+  <div class="step-head">
+    <span class="step-num">5</span>
+    <span class="step-title">拖入照片</span>
+    <span class="step-tag">核心操作</span>
+  </div>
+  <ol>
+    <li>在仓库里点进 <code>photos/2026-08-31/</code>（刚建好的目录）</li>
+    <li>点 <code>Add file</code> → <code>Upload files</code></li>
+    <li>把当天的照片全选<b>直接拖进网页虚线框</b>（一次最多 100 张，可分批）</li>
+    <li>点 <code>Commit changes</code> 完成</li>
+  </ol>
+  <div class="path-box">
+    photos/<br>
+    &nbsp;&nbsp;├── <b>2026-08-31/</b><br>
+    &nbsp;&nbsp;│&nbsp;&nbsp;&nbsp;├── meta.json<br>
+    &nbsp;&nbsp;│&nbsp;&nbsp;&nbsp;├── 01.jpg&nbsp;&nbsp;← 建议数字前缀命名，决定排序<br>
+    &nbsp;&nbsp;│&nbsp;&nbsp;&nbsp;├── 02.jpg<br>
+    &nbsp;&nbsp;│&nbsp;&nbsp;&nbsp;└── 03.jpg<br>
+    &nbsp;&nbsp;├── 2026-05-16/<br>
+    &nbsp;&nbsp;└── 2025-11-08/
+  </div>
+  <div class="tip">💡 想给照片单独起名/标景点？在 meta.json 里加 <code>"captions": {"01.jpg": "东湖绿道入口"}</code> 即可。</div>
+  <div class="warn">⚠️ 支持格式 .jpg/.jpeg/.png/.webp/.gif；单张建议 &lt; 5MB（GitHub 单文件上限 25MB）。</div>
+</section>
+
+<!-- 第 6 步 -->
+<section class="step">
+  <div class="step-head">
+    <span class="step-num">6</span>
+    <span class="step-title">等 CDN 同步，刷新网站</span>
+  </div>
+  <ol>
+    <li>首次提交后，先"预热"一次 CDN 缓存（可选但推荐）：浏览器打开
+      <div class="path-box">https://cdn.jsdelivr.net/gh/你的用户名/photo-album</div>
+    </li>
+    <li>等 <b>5~10 分钟</b>，jsDelivr 完成同步</li>
+    <li>刷新你的图册网站 → 新相册自动出现（最新日期排在最前）</li>
+  </ol>
+  <div class="ok">✅ 之后每次上传新照片，都只需：建日期文件夹（第 4 步）→ 拖照片（第 5 步）→ 等 5 分钟。</div>
+</section>
+
+<!-- 常见问题 -->
+<section class="faq">
+  <h2 style="font-size:20px; font-weight:600; margin: 32px 0 6px;">常见问题</h2>
+
+  <div class="step">
+    <h3>Q0. 我建了一个"相册"目录但传了照片没显示</h3>
+    <p><b>原因</b>：网站读取的是配置里的 <code>photos</code> 目录（见 <code>config.js</code> 的 <code>photosPath: 'photos'</code>）；如果你建了其它名字的目录（如"相册"），网站不会读它。<b>解决</b>：① 进那个目录 → 右上 ··· → Delete directory → Commit 删掉 ② 回到仓库根目录，按本教程第 4 步的方法建 <code>photos/2026-08-31/</code> 日期文件夹。日常所有照片/相册信息只在 <code>photos/</code> 下。</p>
+  </div>
+  <div class="step">
+    <h3>Q0.5 仓库名能不能用中文或带空格？</h3>
+    <p><b>不能</b>。jsDelivr CDN（我们用的免费图床）<b>拒绝</b>含中文、空格或非 ASCII 字符的仓库名（实测返回 400）。建库时务必用纯英文+短横线，例如 <code>photo-album</code>、<code>my-trip</code>。建好之后也可以改名：仓库首页 → 右上 <code>Settings</code> → 滚到底 <code>Rename</code> → 输入 <code>photo-album</code> → Rename。</p>
+  </div>
+  <div class="step">
+    <h3>Q1. GitHub 网站打不开 / 很慢</h3>
+    <p>国内访问 GitHub 偶发不稳定，稍等重试或使用网络加速工具。也可以改用「腾讯云 Serverless / Cloudflare Pages」部署，但照片仍建议存 GitHub（免费 + jsDelivr 国内 CDN 加速）。</p>
+  </div>
+  <div class="step">
+    <h3>Q2. 拖照片显示"太大了"</h3>
+    <p>GitHub 单文件上限 25MB。手机原图一般没问题；超大原图建议先用手机相册压缩到 5MB 以内再传。</p>
+  </div>
+  <div class="step">
+    <h3>Q3. 为什么上传了但网站没显示</h3>
+    <p>① jsDelivr 缓存还没同步（等 5-10 分钟）② 文件夹名不是 <code>YYYY-MM-DD</code> 日期格式 ③ 照片格式不在白名单。逐项排查即可。</p>
+  </div>
+  <div class="step">
+    <h3>Q4. 我要改标题 / 补标签怎么办</h3>
+    <p>仓库里点进 <code>photos/日期/meta.json</code> → 点铅笔图标 ✏️ 编辑 → Commit changes → 等 5 分钟。或者用本地工具 <code>node _tools/photo-tool.mjs edit 2026-08-31</code>。</p>
+  </div>
+  <div class="step">
+    <h3>Q5. 往老相册加照片</h3>
+    <p>进到对应日期文件夹 → Upload files 拖新照片 → Commit，它会自动出现在那个相册里（按文件名排序）。</p>
+  </div>
+  <div class="step">
+    <h3>Q6. 一次传很多照片很麻烦？</h3>
+    <p>① 网页一次最多 100 张，分批传；② 或等配置好本地 git 后，用 <code>node _tools/photo-tool.mjs new</code> + <code>push</code> 一条龙。</p>
+  </div>
+</section>
+
+<footer>阿包旅行图册 · 上传照片教程 v1 · 数据存于 GitHub 公开仓库 + jsDelivr CDN</footer>
+
+</div>
+</body>
+</html>

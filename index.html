@@ -1,0 +1,119 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+  <meta name="theme-color" content="#0a0a0a">
+  <title>阿包旅行图册</title>
+  <meta name="description" content="记录生活，定格美好">
+
+  <link rel="stylesheet" href="style.css">
+  <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'%3E%3Ctext y='.9em' font-size='90'%3E📷%3C/text%3E%3C/svg%3E">
+</head>
+<body>
+
+  <!-- 顶部条 -->
+  <header class="topbar">
+    <div class="brand">
+      <span class="logo" aria-hidden="true">
+        <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round">
+          <path d="M14.5 4h-5L7 7H4a2 2 0 0 0-2 2v9a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2V9a2 2 0 0 0-2-2h-3l-2.5-3Z"/>
+          <circle cx="12" cy="13" r="4"/>
+        </svg>
+      </span>
+      <span class="brand-name" data-bind="title">阿包旅行图册</span>
+    </div>
+    <a class="brand-link xhs" data-bind="xhs" href="#" target="_blank" rel="noopener" hidden><span data-bind="xhs-label"></span></a>
+  </header>
+
+  <!-- 主内容 -->
+  <div class="layout" id="view-list">
+
+    <main class="content">
+
+    <!-- Hero -->
+    <section class="hero">
+      <h1 class="hero-title" data-bind="tagline">记录生活，定格美好</h1>
+      <p class="hero-sub" data-bind="subtitle">用镜头捕捉每一个值得珍藏的瞬间</p>
+      <div class="stats" id="stats" hidden>
+        <div class="stat"><span class="num" id="stat-albums">0</span><span class="label">相册</span></div>
+        <div class="stat"><span class="num" id="stat-photos">0</span><span class="label">照片</span></div>
+        <div class="stat"><span class="num" id="stat-provinces">0</span><span class="label">去过省份</span></div>
+        <div class="stat"><span class="num" id="stat-cities">0</span><span class="label">去过城市</span></div>
+      </div>
+    </section>
+
+    <!-- 搜索 + 标签筛选 -->
+    <section class="toolbar">
+      <div class="search-wrap">
+        <svg class="search-icon" viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/></svg>
+        <input type="search" id="search" placeholder="搜索地点 / 相册名 / 标签…" autocomplete="off" aria-label="搜索相册">
+        <button type="button" class="search-clear" id="search-clear" hidden aria-label="清空搜索">×</button>
+      </div>
+      <div class="tag-row" id="tags" aria-label="标签筛选"></div>
+    </section>
+
+    <!-- 相册网格 -->
+    <section class="albums-wrap">
+      <div id="status" class="status" hidden></div>
+      <div id="albums-grid" class="albums-grid"></div>
+    </section>
+
+    <!-- 地图点亮 -->
+    <section class="map-section" id="map-section" hidden>
+      <div class="map-head">
+        <h2 class="map-title">去过的地方</h2>
+        <p class="map-sub" id="map-sub"></p>
+      </div>
+      <div id="china-map" class="china-map"></div>
+    </section>
+
+  </main>
+
+  </div>   <!-- /layout -->
+
+  <!-- 相册详情视图 -->
+  <main id="view-album" class="view view-album" hidden>
+
+    <button class="back-btn" type="button" aria-label="返回所有相册">
+      <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="m15 18-6-6 6-6"/></svg>
+      <span>返回所有相册</span>
+    </button>
+
+    <header class="album-head">
+      <h2 id="album-title" class="album-title">相册</h2>
+      <p id="album-desc" class="album-desc" hidden></p>
+      <p id="album-meta" class="album-meta-text"></p>
+    </header>
+
+    <div id="photos-grid" class="photos-grid"></div>
+
+  </main>
+
+  <!-- 灯箱 -->
+  <div id="lightbox" class="lightbox" hidden role="dialog" aria-modal="true" aria-label="图片预览">
+    <button class="lb-close" type="button" aria-label="关闭">
+      <svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M18 6 6 18M6 6l12 12"/></svg>
+    </button>
+    <button class="lb-prev" type="button" aria-label="上一张">
+      <svg viewBox="0 0 24 24" width="26" height="26" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="m15 18-6-6 6-6"/></svg>
+    </button>
+    <button class="lb-next" type="button" aria-label="下一张">
+      <svg viewBox="0 0 24 24" width="26" height="26" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="m9 18 6-6-6-6"/></svg>
+    </button>
+    <figure class="lb-stage">
+      <img id="lb-img" alt="" draggable="false">
+    </figure>
+    <div class="lb-counter"><span id="lb-current">1</span> / <span id="lb-total">1</span></div>
+  </div>
+
+  <footer class="site-footer">
+    <span data-bind="footer">© 阿包旅行图册 · Powered by GitHub + jsDelivr</span>
+  </footer>
+
+  <!-- ECharts（地图点亮） -->
+  <script src="https://cdn.jsdelivr.net/npm/echarts@5.5.1/dist/echarts.min.js"></script>
+  <script src="config.js"></script>
+  <script src="app.js"></script>
+</body>
+</html>
