@@ -1,7 +1,8 @@
 {
   "title": "宜昌",
   "location": "宜昌",
-  "province": "湖北",
+  "province": "湖北省",
   "description": "一座很会来电的城市。",
-  "tags": []
+  "tags": [],
+  "cover": "18.jpg"
 }
