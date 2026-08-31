@@ -1,9 +1,17 @@
 {
+  "folder": "2026-06-18",
+  "year": "2026",
+  "month": "06",
+  "date": "2026-06-18",
   "title": "大理",
   "location": "大理",
-  "province": "云南",
+  "province": "云南省",
   "description": "苍山是静默的诗，洱海是流动的画。",
   "tags": [
     "山海"
-  ]
+  ],
+  "cover": "12.jpg",
+  "count": 12,
+  "hasMeta": true,
+  "metaLoaded": true
 }
