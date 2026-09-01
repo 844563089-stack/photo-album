@@ -8,19 +8,14 @@
   <meta name="description" content="记录生活，定格美好">
 
   <link rel="stylesheet" href="style.css">
-  <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'%3E%3Ctext y='.9em' font-size='90'%3E📷%3C/text%3E%3C/svg%3E">
+  <link rel="icon" type="image/jpeg" href="avatar.jpg">
 </head>
 <body>
 
   <!-- 顶部条 -->
   <header class="topbar">
     <div class="brand">
-      <span class="logo" aria-hidden="true">
-        <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round">
-          <path d="M14.5 4h-5L7 7H4a2 2 0 0 0-2 2v9a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2V9a2 2 0 0 0-2-2h-3l-2.5-3Z"/>
-          <circle cx="12" cy="13" r="4"/>
-        </svg>
-      </span>
+      <img class="logo logo-avatar" src="avatar.jpg" alt="阿包头像">
       <span class="brand-name" data-bind="title">阿包旅行图册</span>
     </div>
     <a class="brand-link xhs" data-bind="xhs" href="#" target="_blank" rel="noopener" hidden><span data-bind="xhs-label"></span></a>
@@ -90,6 +85,74 @@
 
   </main>
 
+  <!-- 管理入口按钮 -->
+  <button class="admin-fab" type="button" id="admin-fab" aria-label="管理相册">
+    <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M12 15a3 3 0 1 0 0-6 3 3 0 0 0 0 6Z"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 1 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 1 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 1 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 1 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1Z"/></svg>
+  </button>
+
+  <!-- 管理面板 -->
+  <div class="admin-overlay" id="admin-overlay" hidden>
+    <div class="admin-panel" role="dialog" aria-modal="true" aria-label="管理相册">
+      <header class="admin-head">
+        <h3>管理相册</h3>
+        <button class="admin-close" type="button" id="admin-close" aria-label="关闭">×</button>
+      </header>
+
+      <div class="admin-body">
+
+        <!-- ① GitHub 密钥 -->
+        <section class="admin-sec">
+          <h4>① GitHub 密钥（只需设置一次）</h4>
+          <p class="admin-hint">用于把照片直接传到你的 GitHub 仓库。密钥只保存在<em>你本机的浏览器</em>里，访客看不到。</p>
+          <div class="admin-token-row">
+            <input type="password" id="admin-token" placeholder="粘贴 GitHub token（github_pat_… 或 ghp_…）" autocomplete="off">
+            <button type="button" class="btn-admin" id="admin-token-save">保存</button>
+          </div>
+          <div class="admin-token-actions" id="admin-token-actions" hidden>
+            <span class="admin-token-ok" id="admin-token-ok">✓ 已保存</span>
+            <button type="button" class="btn-admin ghost" id="admin-token-clear">清除</button>
+          </div>
+          <p class="admin-hint small">还没密钥？<a href="https://github.com/settings/tokens?type=beta" target="_blank" rel="noopener">点此生成</a> —— 选 <code>Fine-grained token</code>，Repository access 勾 <code>photo-album</code>，Permissions → Contents 选 <code>Read and write</code>，然后点 Generate token 复制粘贴回来。</p>
+        </section>
+
+        <!-- ② 相册信息 -->
+        <section class="admin-sec">
+          <h4>② 相册信息</h4>
+          <div class="admin-grid2">
+            <label>日期<input type="date" id="admin-date"></label>
+            <label>标题<input type="text" id="admin-title" placeholder="如：东湖樱花季"></label>
+            <label>地点<input type="text" id="admin-location" placeholder="如：武汉"></label>
+            <label>
+              省份
+              <select id="admin-province">
+                <option value="">选择省份…</option>
+              </select>
+            </label>
+          </div>
+          <label>一句话简介<input type="text" id="admin-desc" placeholder="如：三月的东湖，粉白一片。"></label>
+        </section>
+
+        <!-- ③ 选择照片 -->
+        <section class="admin-sec">
+          <h4>③ 选择照片</h4>
+          <label class="admin-file-btn" for="admin-files">
+            <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="8.5" cy="8.5" r="1.5"/><path d="m21 15-5-5L5 21"/></svg>
+            选择照片（可多选）
+          </label>
+          <input type="file" id="admin-files" accept="image/*" multiple hidden>
+          <ul class="admin-file-list" id="admin-file-list"></ul>
+        </section>
+
+        <!-- ④ 上传 -->
+        <section class="admin-sec">
+          <button type="button" class="btn-admin primary" id="admin-upload" disabled>上传相册</button>
+          <div class="admin-status" id="admin-status"></div>
+        </section>
+
+      </div>
+    </div>
+  </div>
+
   <!-- 灯箱 -->
   <div id="lightbox" class="lightbox" hidden role="dialog" aria-modal="true" aria-label="图片预览">
     <button class="lb-close" type="button" aria-label="关闭">
@@ -113,7 +176,9 @@
 
   <!-- ECharts（地图点亮） -->
   <script src="https://cdn.jsdelivr.net/npm/echarts@5.5.1/dist/echarts.min.js"></script>
+  <!-- pinyin-pro（中文 → 拼音，给 album 地点 chip 转换用） -->
+  <script src="https://cdn.jsdelivr.net/npm/pinyin-pro@3.25.0/dist/index.min.js"></script>
   <script src="config.js"></script>
-  <script src="app.js"></script>
+  <script src="app.js?v=20260831m"></script>
 </body>
 </html>
