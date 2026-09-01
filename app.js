@@ -68,6 +68,138 @@
 
   const photosRoot = () => (GH.photosPath || 'photos').replace(/\/$/, '');
 
+  // 地点 → 拼音 / 拉丁化译名。
+  // 凡是 pinyin-pro 默认输出错的（如"西安"应该带撇号 Xi'an、"拉萨"用 Lhasa 不是 La Sa），
+  // 都放进白名单里精确覆盖；其余输入全交给 pinyin-pro 自动转，**用户无需再维护这张表**。
+  const LOC_PINYIN = {
+    '西安': "Xi'an",       // pinyin-pro → "xi an"，需要撇号
+    '拉萨': 'Lhasa',       // 拉丁化译名（藏语英译）
+    '哈尔滨': 'Harbin',    // 拉丁化译名（满语英译）
+    '乌鲁木齐': 'Urumqi',  // 拉丁化译名（维语英译）
+    '呼和浩特': 'Hohhot',  // 拉丁化译名（蒙语英译）
+    '喀什': 'Kashgar',     // 拉丁化译名（维语英译）
+    '吐鲁番': 'Turpan',    // 拉丁化译名
+    '香格里拉': 'Shangri-La',
+    '青海湖': 'Qinghai Lake',  // pinyin-pro → "qinghai hu"，英文习惯加 Lake
+  };
+  // 全自动中文 → 拼音：pinyin-pro 覆盖所有汉字，去空格 + 首字母大写即可。
+  // 白名单（LOC_PINYIN）只覆盖拉丁化译名/特殊拼写。
+  const locPinyin = (s) => {
+    if (!s) return s;
+    if (LOC_PINYIN[s]) return LOC_PINYIN[s];
+    const P = (typeof window !== 'undefined' && window.pinyinPro) ||
+              (typeof globalThis !== 'undefined' && globalThis.pinyinPro);
+    if (P && typeof P.pinyin === 'function') {
+      try {
+        const py = P.pinyin(s, { toneType: 'none', type: 'string', v: true, nonZh: 'consecutive' });
+        if (py) return py.replace(/\s+/g, '').replace(/^[a-z]/, (c) => c.toUpperCase());
+      } catch { /* 失败兜底 */ }
+    }
+    return s;
+  };
+
+  function utf8ToBase64(s) {
+    const bytes = new TextEncoder().encode(s);
+    let bin = '';
+    for (let i = 0; i < bytes.length; i++) bin += String.fromCharCode(bytes[i]);
+    return btoa(bin);
+  }
+
+  // 数据清洗：删除所有 ASCII 控制字符（如 \u0006 这类脏字符）+ 首尾空白
+  // 浏览器自动填充/输入法偶发会塞入控制字符，写入 GitHub 前必须清掉，否则 title/location 变乱码
+  function sanitizeStr(s) {
+    if (typeof s !== 'string') return s;
+    let out = '';
+    for (let i = 0; i < s.length; i++) {
+      const c = s.charCodeAt(i);
+      if (c < 0x20 || c === 0x7f) continue;   // 跳过控制字符（\n\t\r 也一并清理，标题/地点不需要）
+      out += s[i];
+    }
+    return out.trim();
+  }
+
+  // 判断字符串是否"有实质内容"（含中文/日文假名/字母/数字），仅剩标点或空 → false
+  // 配合 sanitizeStr 兜底：清洗后只剩裸标点（如历史脏数据 '\u0006 → '）时回退旧值
+  function isMeaningful(s) {
+    if (!s) return false;
+    for (let i = 0; i < s.length; i++) {
+      if (/[\u4e00-\u9fff\u3040-\u30ffa-zA-Z0-9]/.test(s[i])) return true;
+    }
+    return false;
+  }
+
+  // 修复 mojibake：历史遗留数据把 UTF-8 字节当 latin1 逐字节误读（如"大理"→"å¤§ç"）
+  // 关键判断：mojibake 的特征是「所有字符的 charCodeAt 都 ≤ 0xFF」（单字节 latin1）。
+  // 正常中文字符（CJK 0x4E00-0x9FFF）charCodeAt 远大于 0xFF，绝不是 mojibake，必须原样放行。
+  function fixMojibake(s) {
+    if (typeof s !== 'string' || !s) return s;
+    let allLatin1 = true;   // 是否所有字符都在 latin1 单字节范围内
+    let hasHigh = false;    // 是否含 ≥0x80 的高位 latin1（纯 ASCII 无需处理）
+    for (let i = 0; i < s.length; i++) {
+      const c = s.charCodeAt(i);
+      if (c > 0xFF) { allLatin1 = false; break; }  // 含正常 Unicode（中文等）→ 不是 mojibake
+      if (c >= 0x80) hasHigh = true;
+    }
+    if (!allLatin1 || !hasHigh) return s;
+    // 把 latin1 字符的低字节当 UTF-8 字节重新解码
+    const bytes = new Uint8Array(s.length);
+    for (let i = 0; i < s.length; i++) bytes[i] = s.charCodeAt(i) & 0xff;
+    try {
+      return new TextDecoder('utf-8', { fatal: true }).decode(bytes);
+    } catch { return s; }
+  }
+  function fixMetaObj(m) {
+    if (!m || typeof m !== 'object') return m;
+    const out = {};
+    Object.keys(m).forEach((k) => {
+      const v = m[k];
+      if (typeof v === 'string') out[k] = sanitizeStr(fixMojibake(v));
+      else if (Array.isArray(v)) out[k] = v.map((x) => typeof x === 'string' ? sanitizeStr(fixMojibake(x)) : x);
+      else out[k] = v;
+    });
+    return out;
+  }
+
+  // GitHub Contents API 工具（主作用域：管理面板 / 设封面 复用）
+  function ghHeaders(token) {
+    return {
+      'Authorization': `Bearer ${token}`,
+      'Accept': 'application/vnd.github+json',
+      'Content-Type': 'application/json',
+    };
+  }
+  async function ghGetSha(token, path) {
+    const url = `https://api.github.com/repos/${encodeURIComponent(GH.owner)}/${encodeURIComponent(GH.repo)}/contents/${path}`;
+    try {
+      const res = await fetch(url, { headers: ghHeaders(token) });
+      if (!res.ok) return null;
+      const data = await res.json();
+      return data.sha || null;
+    } catch { return null; }
+  }
+  async function ghPutFile(token, path, contentB64, message) {
+    const sha = await ghGetSha(token, path);
+    const body = { message, content: contentB64, branch: GH.branch || 'main' };
+    if (sha) body.sha = sha;
+    const url = `https://api.github.com/repos/${encodeURIComponent(GH.owner)}/${encodeURIComponent(GH.repo)}/contents/${path}`;
+    const res = await fetch(url, { method: 'PUT', headers: ghHeaders(token), body: JSON.stringify(body) });
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({}));
+      throw new Error(err.message || `HTTP ${res.status}`);
+    }
+    purgeJsdelivr(path);   // 写入成功后清 jsDelivr 缓存，让 CDN 上的 meta.json/照片也实时
+    return true;
+  }
+  // 清 jsDelivr 单文件缓存（免费公开服务；失败不影响主流程，raw 兜底仍可实时读）
+  function purgeJsdelivr(rel) {
+    try {
+      const eo = encodeURIComponent(GH.owner);
+      const er = encodeURIComponent(GH.repo);
+      fetch(`https://purge.jsdelivr.net/gh/${eo}/${er}@${GH.branch || 'main'}/${rel}`, { cache: 'no-cache' })
+        .catch(() => {});
+    } catch { /* ignore */ }
+  }
+
   function imageUrl(path) {
     const { owner, repo, branch } = GH;
     const eo = encodeURIComponent(owner);
@@ -218,23 +350,37 @@
       ? { Authorization: `Bearer ${GH.token}`, Accept: 'application/vnd.github+json' }
       : { Accept: 'application/vnd.github+json' };
 
+    // 文件树获取：git/trees API 优先（认证/限速），失败 → jsDelivr Data API（实时索引，国内稳定）
+    let data = null;
     try {
       const url = `https://api.github.com/repos/${encodeURIComponent(GH.owner)}/${encodeURIComponent(GH.repo)}/git/trees/${GH.branch}?recursive=1`;
       const res = await fetch(url, { headers });
-
-      if (res.status === 403) {
-        showStatus(`
-          <strong>GitHub API 速率限制</strong><br>
-          公开仓库每小时限 60 次请求。请稍后再试，或去
-          <a href="https://github.com/settings/tokens?type=beta" target="_blank" rel="noopener">GitHub Settings</a>
-          生成 fine-grained token（仅勾 <em>Public contents: read</em>）填进 <code>config.js</code>。
-        `, { error: true });
-        return;
-      }
-      if (!res.ok) throw new Error(`HTTP ${res.status}`);
-
-      const data = await res.json();
-      const prefix = photosRoot() + '/';
+      if (res.ok) data = await res.json();
+    } catch { data = null; }
+    if (!data) {
+      try {
+        const dUrl = `https://data.jsdelivr.com/v1/packages/gh/${encodeURIComponent(GH.owner)}/${encodeURIComponent(GH.repo)}@${GH.branch}?structure=flat`;
+        const res = await fetch(dUrl, { cache: 'no-cache' });
+        if (res.ok) {
+          const d = await res.json();
+          // data.jsdelivr 返回 { files: [{ name: '/photos/...' }] }，映射成与 git/trees 相同的结构
+          data = {
+            tree: (d.files || []).map((f) => ({
+              type: 'blob',
+              path: String(f.name || '').replace(/^\//, ''),
+            })),
+          };
+        }
+      } catch { data = null; }
+    }
+    if (!data) {
+      showStatus(`
+        <strong>无法读取相册列表</strong><br>
+        GitHub API 与 jsDelivr 数据源暂时都不可达，请稍后刷新重试。
+      `, { error: true });
+      return;
+    }
+    const prefix = photosRoot() + '/';
       const albumsMap = new Map();
 
       (data.tree || []).forEach((node) => {
@@ -281,51 +427,100 @@
         };
       }).filter((a) => a.photos.length > 0);
 
-      await fetchAllMeta(state.albums);
-      sortAlbums();
-      hideStatus();
-      afterLoad();
-    } catch (err) {
-      console.error(err);
-      showStatus(`
-        <strong>加载失败</strong><br>
-        ${escapeHtml(err.message || String(err))}<br>
-        请检查 <code>config.js</code> 的 owner / repo / branch，且仓库为 <b>Public</b>。
-      `, { error: true });
-    }
+      try {
+        await fetchAllMeta(state.albums);
+        // 关键过滤：meta.json 拉不到的相册（说明 meta 已删除/不存在）不显示。
+        // 防止 jsDelivr Data API 索引同步延迟期间，已删除的相册靠 CDN 残留"复活"成空壳。
+        state.albums = state.albums.filter((a) => a.metaLoaded && a.photos.length > 0);
+        sortAlbums();
+        hideStatus();
+        afterLoad();
+      } catch (err) {
+        console.error(err);
+        showStatus(`
+          <strong>加载失败</strong><br>
+          ${escapeHtml(err.message || String(err))}<br>
+          请检查 <code>config.js</code> 的 owner / repo / branch，且仓库为 <b>Public</b>。
+        `, { error: true });
+      }
   }
 
-  /* 拉取各相册 meta.json（jsDelivr 优先，raw 兜底，不占 API 配额） */
+  /* 拉取各相册 meta.json（带 token 的 API 优先 → raw → jsDelivr 兜底） */
   async function fetchAllMeta(albums) {
     const withMeta = albums.filter((a) => a.hasMeta);
-    const chunk = 6;
+    const chunk = 4;
     for (let i = 0; i < withMeta.length; i += chunk) {
       await Promise.all(withMeta.slice(i, i + chunk).map(async (a) => {
         const rel = `${photosRoot()}/${a.folder}/meta.json`;
-        const urls = [imageUrl(rel), `https://raw.githubusercontent.com/${encodeURIComponent(GH.owner)}/${encodeURIComponent(GH.repo)}/${GH.branch}/${rel}`];
-        for (const u of urls) {
+        // ① 优先 raw.githubusercontent.com（实时 commit 快照 + 时间戳，无 CDN 缓存；国内多数网络可达）
+        //    其次 jsDelivr CDN（国内稳定，理论最长 12h 缓存；写端成功后已 purge，此处为兜底）
+        //    api.github.com 在国内网络不稳定（实测经常连接失败），放最后兜底并带 8s 超时防卡页
+        let m = null;
+        // ① 优先带 token 的 GitHub Contents API：实时认证、无 CDN 缓存（token 存在时最可靠，
+        //    避免 raw 不稳/jsDelivr 旧缓存导致封面等字段刷新后丢失）
+        if (GH.token) {
           try {
-            const r = await fetch(u, { cache: 'no-cache' });
-            if (!r.ok) continue;
-            const m = await r.json();
-            if (m && typeof m === 'object') {
-              if (m.title) a.title = m.title;
-              if (m.location) a.location = m.location;
-              if (m.province) a.province = normalizeProvince(m.province);
-              if (m.description) a.description = String(m.description).trim();
-              if (m.captions && typeof m.captions === 'object') {
-                const cap = {};
-                Object.keys(m.captions).forEach((k) => {
-                  if (a.photos.includes(k) && m.captions[k]) cap[k] = String(m.captions[k]).trim();
-                });
-                a.captions = cap;
-              }
-              if (Array.isArray(m.tags)) a.tags = m.tags.map((t) => String(t).trim()).filter(Boolean);
-              if (m.cover && a.photos.includes(m.cover)) a.cover = m.cover;
-              a.metaLoaded = true;
+            const apiUrl = `https://api.github.com/repos/${encodeURIComponent(GH.owner)}/${encodeURIComponent(GH.repo)}/contents/${rel}`;
+            const ctrl = new AbortController();
+            const timer = setTimeout(() => ctrl.abort(), 8000);
+            const r = await fetch(apiUrl, {
+              headers: ghHeaders(GH.token),
+              signal: ctrl.signal,
+            });
+            clearTimeout(timer);
+            if (r.ok) {
+              const d = await r.json();
+              // GitHub API 的 content 字段是 base64 编码的 UTF-8 字节
+              // 正确解码：先 atob 拿二进制，再 TextDecoder 转 UTF-8（不能直接 atob 当字符串）
+              const bin = atob((d.content || '').replace(/\n/g, ''));
+              const bytes = new Uint8Array(bin.length);
+              for (let i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i);
+              const txt = new TextDecoder('utf-8').decode(bytes);
+              m = JSON.parse(txt);
             }
-            return;
-          } catch (e) { /* try next */ }
+          } catch { m = null; }
+        }
+        // ② raw 兜底（实时快照 + 时间戳；国内时通时断）
+        if (!m) {
+          const rawUrl = `https://raw.githubusercontent.com/${encodeURIComponent(GH.owner)}/${encodeURIComponent(GH.repo)}/${GH.branch}/${rel}?_t=${Date.now()}`;
+          try {
+            const r = await fetch(rawUrl, { cache: 'no-cache' });
+            if (r.ok) {
+              const tmp = await r.json();
+              if (tmp && typeof tmp === 'object') m = tmp;
+            }
+          } catch { m = null; }
+        }
+        // ③ jsDelivr 最后兜底（国内稳定，但可能命中 CDN 缓存返回旧数据，仅作保底）
+        if (!m) {
+          try {
+            const r = await fetch(imageUrl(rel), { cache: 'no-cache' });
+            if (r.ok) {
+              const tmp = await r.json();
+              if (tmp && typeof tmp === 'object') m = tmp;
+            }
+          } catch { m = null; }
+        }
+        if (m && typeof m === 'object') {
+          m = fixMetaObj(m);                     // 修复旧 mojibake 字符串（已含 sanitizeStr）
+          // 兜底：CDN fallback 时可能拿到历史脏数据，sanitizeStr 清掉控制字符但保留合法标点
+          // 用 isMeaningful 把"只剩标点/纯数字"的异常值挡掉，宁可不显示也不显示脏值
+          if (m.title && isMeaningful(m.title)) a.title = m.title;
+          if (m.location) a.location = m.location;            // location 允许为空字符串
+          if (m.province) a.province = normalizeProvince(m.province);
+          if (m.description && isMeaningful(m.description)) a.description = String(m.description).trim();
+          if (m.captions && typeof m.captions === 'object') {
+            const cap = {};
+            Object.keys(m.captions).forEach((k) => {
+              if (a.photos.includes(k) && m.captions[k]) cap[k] = String(m.captions[k]).trim();
+            });
+            a.captions = cap;
+          }
+          if (Array.isArray(m.tags)) {
+            a.tags = m.tags.map((t) => String(t).trim()).filter((t) => t && isMeaningful(t));
+          }
+          if (m.cover && a.photos.includes(m.cover)) a.cover = m.cover;
+          a.metaLoaded = true;
         }
       }));
     }
@@ -428,7 +623,7 @@
       <div class="album-meta">
         <div class="album-title-line">
           <span class="album-title-text">${escapeHtml(album.title)}</span>
-          ${album.location ? `<span class="album-loc">${escapeHtml(album.location)}</span>` : ''}
+          ${album.location ? `<span class="album-loc">${escapeHtml(locPinyin(album.location))}</span>` : ''}
         </div>
         <div class="album-sub">
           ${album.year ? `<span>${formatDate(album.date)}</span>` : ''}
@@ -455,13 +650,21 @@
       img.classList.add('loaded');
       skel.remove();
     }, { once: true });
+    // jsDelivr 边缘节点偶发失败时，自动重试一次 raw.githubusercontent.com 兜底；
+    // raw 仍失败才显示"加载失败"，避免单次网络抖动直接锁死。
     img.addEventListener('error', () => {
+      if (!img.dataset.retried && !isDirectUrl && coverSrc) {
+        img.dataset.retried = '1';
+        const rawUrl = `https://raw.githubusercontent.com/${encodeURIComponent(GH.owner)}/${encodeURIComponent(GH.repo)}/${GH.branch || 'main'}/${photosRoot()}/${album.folder}/${encodeURIComponent(coverSrc)}`;
+        img.src = rawUrl;
+        return;
+      }
       skel.remove();
       img.replaceWith(Object.assign(document.createElement('div'), {
         textContent: '封面加载失败',
         style: 'position:absolute;inset:0;display:grid;place-items:center;color:#777;font-size:13px;',
       }));
-    }, { once: true });
+    });
 
     card.addEventListener('click', () => openAlbum(album.folder));
     card.addEventListener('keydown', (e) => {
@@ -689,6 +892,7 @@
       elPhotosGrid.innerHTML = '<p style="text-align:center;color:var(--fg-muted);padding:64px;">这个相册里没有可识别的图片。</p>';
       return;
     }
+    const isCurrentCover = (n) => album.cover && album.cover === n;
     items.forEach((p, i) => {
       // 照片标注：优先 captions 映射，缺省用文件名（去扩展名）
       const cap = (album.captions && album.captions[p.name])
@@ -700,6 +904,7 @@
       card.innerHTML = `
         <div class="skeleton"></div>
         <img loading="lazy" alt="${escapeHtml(cap)}" draggable="false" />
+        <button type="button" class="photo-cover-btn ${isCurrentCover(p.name) ? 'is-cover' : ''}" data-set-cover="${escapeHtml(p.name)}" aria-label="${isCurrentCover(p.name) ? '当前封面' : '设为封面'}" title="${isCurrentCover(p.name) ? '当前封面' : '设为封面'}">${isCurrentCover(p.name) ? '★' : '☆'}</button>
         <figcaption class="photo-cap">${escapeHtml(cap)}</figcaption>
       `;
       const img = card.querySelector('img');
@@ -707,9 +912,56 @@
       img.src = p.url;
       img.addEventListener('load', () => { img.classList.add('loaded'); skel.remove(); }, { once: true });
       img.addEventListener('error', () => skel.remove(), { once: true });
+      // 设封面按钮：阻止冒泡（不打开灯箱）
+      const btn = card.querySelector('.photo-cover-btn');
+      btn.addEventListener('click', (e) => {
+        e.stopPropagation();
+        setAlbumCover(album, p.name, btn);
+      });
       card.addEventListener('click', () => openLightbox(i));
       elPhotosGrid.appendChild(card);
     });
+  }
+
+  // 把某张照片设为封面：调用 API 更新 meta.json 的 cover 字段
+  async function setAlbumCover(album, photoName, btn) {
+    const token = localStorage.getItem(TOKEN_KEY) || GH.token;
+    if (!token) {
+      elAlbumMeta.textContent = '设封面需要 GitHub 密钥，先去右下角 ⚙ 管理面板粘贴 token';
+      return;
+    }
+    btn.disabled = true;
+    try {
+      // 白名单重建 meta.json：只保留用户可编辑字段，避免污染运行时字段（字段值过 sanitizeStr 防乱码）
+      const clean = {
+        title: sanitizeStr(album.title),
+        location: sanitizeStr(album.location),
+        province: sanitizeStr(album.province),
+        description: sanitizeStr(album.description),
+        tags: Array.isArray(album.tags) ? album.tags.map((t) => sanitizeStr(t)).filter(Boolean) : [],
+        cover: photoName,
+      };
+      Object.keys(clean).forEach((k) => { if (clean[k] === undefined || clean[k] === null || clean[k] === '') delete clean[k]; });
+      const metaB64 = utf8ToBase64(JSON.stringify(clean, null, 2));
+      const metaPath = `${photosRoot()}/${album.folder}/meta.json`;
+      // 复用 ghPutFile：内部已含 ghGetSha + PUT + purgeJsdelivr（清 jsDelivr 缓存，
+      // 否则刷新时 raw 失败会 fallback 到 jsDelivr 旧数据 → 封面丢失）
+      await ghPutFile(token, metaPath, metaB64, `set cover: ${album.folder}/${photoName}`);
+      // 本地 album 状态同步
+      album.cover = photoName;
+      // 重新渲染所有按钮状态：当前封面 = 实心★，其余 = 空心☆
+      elPhotosGrid.querySelectorAll('.photo-cover-btn').forEach((b) => {
+        const on = b.dataset.setCover === photoName;
+        b.classList.toggle('is-cover', on);
+        b.textContent = on ? '★' : '☆';
+        b.title = on ? '当前封面' : '设为封面';
+        b.setAttribute('aria-label', on ? '当前封面' : '设为封面');
+      });
+    } catch (e) {
+      alert('设封面失败：' + (e.message || e));
+    } finally {
+      btn.disabled = false;
+    }
   }
 
   function closeAlbum() {
@@ -718,6 +970,7 @@
     window.scrollTo({ top: 0, behavior: 'instant' });
     elPhotosGrid.innerHTML = '';
     photoState.items = [];
+    applyFilters();              // 退出详情时刷新列表：让封面修改 / 统计即时生效
   }
 
   /* ============================================================
@@ -748,6 +1001,281 @@
     elLbImg.alt = item.name;
     elLbCurrent.textContent = photoState.index + 1;
     elLbTotal.textContent = photoState.items.length;
+  }
+
+  /* ============================================================
+   * 管理面板（网页直传照片 + 自动写 meta.json）
+   * ============================================================ */
+  const elAdminFab        = $('#admin-fab');
+  const elAdminOverlay    = $('#admin-overlay');
+  const elAdminClose      = $('#admin-close');
+  const elAdminToken      = $('#admin-token');
+  const elAdminTokenSave  = $('#admin-token-save');
+  const elAdminTokenClear = $('#admin-token-clear');
+  const elAdminTokenOk    = $('#admin-token-ok');
+  const elAdminTokenActions = $('#admin-token-actions');
+  const elAdminDate       = $('#admin-date');
+  const elAdminTitle      = $('#admin-title');
+  const elAdminLocation   = $('#admin-location');
+  const elAdminProvince   = $('#admin-province');
+  const elAdminDesc       = $('#admin-desc');
+  const elAdminFiles      = $('#admin-files');
+  const elAdminFileList   = $('#admin-file-list');
+  const elAdminUpload     = $('#admin-upload');
+  const elAdminStatus     = $('#admin-status');
+
+  const PROVINCES = ['北京','天津','上海','重庆','河北','山西','辽宁','吉林','黑龙江','江苏','浙江','安徽','福建','江西','山东','河南','湖北','湖南','广东','广西','海南','四川','贵州','云南','西藏','陕西','甘肃','青海','宁夏','新疆','内蒙古','中国香港','中国澳门','中国台湾'];
+  const TOKEN_KEY = 'pa_token_v1';
+  let adminFiles = [];
+
+  // 城市 → 省份映射（输入地点时自动识别省份）
+  const CITY_PROVINCE = {
+    '北京': '北京', '天津': '天津', '上海': '上海', '重庆': '重庆',
+    '武汉': '湖北', '黄石': '湖北', '宜昌': '湖北', '襄阳': '湖北', '十堰': '湖北',
+    '荆州': '湖北', '荆门': '湖北', '恩施': '湖北', '神农架': '湖北', '长沙': '湖南',
+    '株洲': '湖南', '湘潭': '湖南', '衡阳': '湖南', '岳阳': '湖南', '张家界': '湖南',
+    '婺源': '江西', '南昌': '江西', '九江': '江西', '景德镇': '江西', '赣州': '江西',
+    '杭州': '浙江', '宁波': '浙江', '温州': '浙江', '绍兴': '浙江', '乌镇': '浙江',
+    '西塘': '浙江', '舟山': '浙江',
+    '南京': '江苏', '苏州': '江苏', '无锡': '江苏', '扬州': '江苏', '镇江': '江苏',
+    '广州': '广东', '深圳': '广东', '珠海': '广东', '汕头': '广东', '佛山': '广东',
+    '东莞': '广东', '中山': '广东',
+    '成都': '四川', '九寨沟': '四川', '峨眉山': '四川', '乐山': '四川', '都江堰': '四川',
+    '西安': '陕西', '华山': '陕西', '宝鸡': '陕西', '延安': '陕西',
+    '昆明': '云南', '大理': '云南', '丽江': '云南', '西双版纳': '云南', '腾冲': '云南',
+    '香格里拉': '云南',
+    '桂林': '广西', '南宁': '广西', '北海': '广西',
+    '敦煌': '甘肃', '兰州': '甘肃', '张掖': '甘肃', '嘉峪关': '甘肃',
+    '拉萨': '西藏', '日喀则': '西藏', '林芝': '西藏',
+    '乌鲁木齐': '新疆', '吐鲁番': '新疆', '喀什': '新疆', '伊犁': '新疆',
+    '西宁': '青海', '青海湖': '青海', '格尔木': '青海',
+    '银川': '宁夏', '中卫': '宁夏',
+    '呼和浩特': '内蒙古', '包头': '内蒙古', '额济纳': '内蒙古',
+    '哈尔滨': '黑龙江', '齐齐哈尔': '黑龙江', '漠河': '黑龙江',
+    '长春': '吉林', '吉林': '吉林', '延边': '吉林', '长白山': '吉林',
+    '沈阳': '辽宁', '大连': '辽宁', '丹东': '辽宁',
+    '石家庄': '河北', '承德': '河北', '秦皇岛': '河北',
+    '太原': '山西', '大同': '山西', '平遥': '山西', '五台山': '山西',
+    '济南': '山东', '青岛': '山东', '烟台': '山东', '泰山': '山东', '威海': '山东',
+    '郑州': '河南', '洛阳': '河南', '开封': '河南', '少林寺': '河南',
+    '合肥': '安徽', '黄山': '安徽', '宏村': '安徽',
+    '福州': '福建', '厦门': '福建', '泉州': '福建', '武夷山': '福建', '土楼': '福建',
+    '贵阳': '贵州', '遵义': '贵州', '黄果树': '贵州', '荔波': '贵州',
+    '三亚': '海南', '海口': '海南',
+    '香港': '中国香港', '澳门': '中国澳门', '台北': '中国台湾',
+  };
+
+  function initAdmin() {
+    // 日期默认今天
+    const d = new Date();
+    elAdminDate.value = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+    // 省份下拉
+    elAdminProvince.innerHTML = '<option value="">选择省份…</option>' + PROVINCES.map((p) => `<option value="${p}">${p}</option>`).join('');
+    // token 恢复
+    const saved = localStorage.getItem(TOKEN_KEY);
+    if (saved) {
+      elAdminToken.value = saved;
+      elAdminTokenOk.textContent = '✓ 已保存';
+      elAdminTokenActions.hidden = false;
+      GH.token = saved;               // 浏览相册时也用 token 提额
+    }
+    // 地点 → 省份自动识别（用户离开焦点时）
+    if (!elAdminLocation.dataset.bound) {
+      elAdminLocation.dataset.bound = '1';
+      elAdminLocation.addEventListener('change', () => {
+        const loc = sanitizeStr(elAdminLocation.value);
+        const prov = CITY_PROVINCE[loc];
+        if (prov) {
+          elAdminProvince.value = prov;
+          adminStatus(`已自动识别「${loc}」→ 省份「${prov}」`, true);
+        } else if (loc) {
+          adminStatus(`未识别「${loc}」对应省份，请手动选择`, false);
+        }
+      });
+    }
+  }
+
+  function adminStatus(html, ok) {
+    elAdminStatus.innerHTML = html;
+    elAdminStatus.className = 'admin-status' + (ok ? ' ok' : ok === false ? ' err' : '');
+  }
+
+  // GitHub API 工具已提升到主作用域（设封面复用）
+
+  // 客户端压缩图片：max 长边 2048px、quality 0.85（保证单图 < 5MB，GitHub 上传稳定）
+  async function compressImage(file, maxDim = 2048, quality = 0.85) {
+    if (!/image\/(jpeg|jpg|webp)/i.test(file.type)) return file;     // PNG/GIF/HEIC 不动
+    const blobUrl = URL.createObjectURL(file);
+    const img = await new Promise((resolve, reject) => {
+      const i = new Image();
+      i.onload = () => resolve(i);
+      i.onerror = reject;
+      i.src = blobUrl;
+    });
+    const w0 = img.naturalWidth, h0 = img.naturalHeight;
+    if (w0 <= maxDim && h0 <= maxDim && file.size < 5 * 1024 * 1024) {
+      URL.revokeObjectURL(blobUrl);
+      return file;
+    }
+    const scale = Math.min(1, maxDim / Math.max(w0, h0));
+    const w = Math.round(w0 * scale), h = Math.round(h0 * scale);
+    const canvas = document.createElement('canvas');
+    canvas.width = w; canvas.height = h;
+    const ctx = canvas.getContext('2d');
+    ctx.drawImage(img, 0, 0, w, h);
+    URL.revokeObjectURL(blobUrl);
+    return await new Promise((resolve) => {
+      canvas.toBlob((blob) => {
+        if (!blob) { resolve(file); return; }
+        const outName = file.name.replace(/\.(jpe?g|webp)$/i, '.jpg');
+        resolve(new File([blob], outName, { type: 'image/jpeg' }));
+      }, 'image/jpeg', quality);
+    });
+  }
+
+  async function fileToBase64(file) {
+    const f = await compressImage(file);
+    return new Promise((resolve, reject) => {
+      const r = new FileReader();
+      r.onload = () => {
+        const s = r.result;
+        const idx = s.indexOf(',');
+        resolve(idx >= 0 ? s.slice(idx + 1) : s);
+      };
+      r.onerror = () => reject(new Error('读取文件失败'));
+      r.readAsDataURL(f);
+    });
+  }
+
+  function renderAdminFileList() {
+    elAdminFileList.innerHTML = adminFiles.map((f, i) => {
+      const sz = (f.size / 1024 / 1024).toFixed(2);
+      const oversized = f.size > 20 * 1024 * 1024;
+      return `<li><span class="af-name">${escapeHtml(f.name)}</span><span class="af-size${oversized ? ' warn' : ''}">${sz} MB${oversized ? ' ⚠' : ''}</span></li>`;
+    }).join('');
+    // 无照片时：只要有任一表单内容就允许"仅更新相册信息"
+    const hasMetaInput = !!(sanitizeStr(elAdminTitle.value) || sanitizeStr(elAdminLocation.value) || sanitizeStr(elAdminDesc.value));
+    elAdminUpload.disabled = adminFiles.length === 0 && !hasMetaInput;
+  }
+
+  async function doUpload() {
+    const token = elAdminToken.value.trim();
+    if (!token) { adminStatus('请先填写并保存 GitHub 密钥', false); return; }
+    localStorage.setItem(TOKEN_KEY, token);
+    GH.token = token;
+
+    const date = elAdminDate.value;
+    if (!date) { adminStatus('请选择日期', false); return; }
+    const folder = date;
+    const root = photosRoot();
+
+    // ① 先读旧 meta.json（如果存在 → 合并：用户没填的字段保留旧的）
+    const metaPath = `${root}/${folder}/meta.json`;
+    let oldMeta = {};
+    try {
+      const r = await fetch(`https://api.github.com/repos/${encodeURIComponent(GH.owner)}/${encodeURIComponent(GH.repo)}/contents/${metaPath}`, { headers: ghHeaders(token) });
+      if (r.ok) {
+        const d = await r.json();
+        // UTF-8 正确解码（GitHub API content 是 base64 编码的 UTF-8 字节）
+        const bin = atob((d.content || '').replace(/\n/g, ''));
+        const bytes = new Uint8Array(bin.length);
+        for (let i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i);
+        const txt = new TextDecoder('utf-8').decode(bytes);
+        oldMeta = fixMetaObj(JSON.parse(txt));
+      }
+    } catch { /* 旧 meta 不存在或读不到，忽略 */ }
+
+    // ①.5 计算起始编号：目录已存在照片则续号（补传），否则从 01 开始
+    let startNum = 1;
+    try {
+      const dirUrl = `https://api.github.com/repos/${encodeURIComponent(GH.owner)}/${encodeURIComponent(GH.repo)}/contents/${root}/${encodeURIComponent(folder)}`;
+      const r = await fetch(dirUrl, { headers: ghHeaders(token) });
+      if (r.ok) {
+        const list = await r.json();
+        if (Array.isArray(list)) {
+          const nums = list
+            .map((f) => f.name.match(/^(\d+)\./))
+            .filter(Boolean)
+            .map((m) => parseInt(m[1], 10))
+            .filter((n) => !isNaN(n));
+          if (nums.length) startNum = Math.max(...nums) + 1;
+        }
+      }
+    } catch { /* 读目录失败则从 01 开始 */ }
+
+    // ② 合并：用户填的字段优先，未填的字段保留旧值（已去除标签选项）
+    //    全部过 sanitizeStr 清洗：防止输入法/自动填充塞入控制字符导致乱码
+    const userTitle = sanitizeStr(elAdminTitle.value);
+    const userLoc   = sanitizeStr(elAdminLocation.value);
+    const userProv  = sanitizeStr(elAdminProvince.value);
+    const userDesc  = sanitizeStr(elAdminDesc.value);
+    const meta = {
+      // isMeaningful 兜底：清洗后只剩标点（无中文/字母/数字）视为无效输入，回退旧值/日期
+      title: isMeaningful(userTitle) ? userTitle : (oldMeta.title || date),
+      location: isMeaningful(userLoc) ? userLoc : (oldMeta.location || ''),
+      province: userProv || oldMeta.province || '',
+      description: isMeaningful(userDesc) ? userDesc : (oldMeta.description || ''),
+      tags: [],                                                    // 管理面板不再写标签
+    };
+    if (oldMeta.cover) meta.cover = oldMeta.cover;     // 保留旧封面设置
+
+    elAdminUpload.disabled = true;
+    adminStatus('上传中…', true);
+
+    try {
+      // ① 照片：续号命名（已有 01…12 则新图为 13、14…）逐个压缩 + 上传 + 统计失败
+      //    没选照片（仅更新相册信息）时跳过此循环
+      const results = [];
+      const failed = [];
+      const appendMode = startNum > 1;   // 已有照片 = 补传模式
+      const isMetaOnly = adminFiles.length === 0;
+      if (isMetaOnly) {
+        adminStatus('仅更新相册信息（无照片）…', true);
+      }
+      for (let i = 0; i < adminFiles.length; i++) {
+        const f = adminFiles[i];
+        const num = String(startNum + i).padStart(2, '0');
+        const ext = extOf(f.name) || '.jpg';
+        const name = `${num}${ext}`;
+        const path = `${root}/${folder}/${name}`;
+        try {
+          const b64 = await fileToBase64(f);
+          await ghPutFile(token, path, b64, `upload photo ${folder}/${name}`);
+          results.push(name);
+          adminStatus(`上传照片中… ${i + 1}/${adminFiles.length}`, true);
+        } catch (e) {
+          failed.push({ name: f.name, err: e.message || String(e) });
+          adminStatus(`上传照片中… ${i + 1}/${adminFiles.length}（${f.name} 失败，已跳过）`, false);
+        }
+      }
+
+      // ② meta.json
+      const metaPath = `${root}/${folder}/meta.json`;
+      const metaB64 = utf8ToBase64(JSON.stringify(meta, null, 2));
+      await ghPutFile(token, metaPath, metaB64, `add album meta ${folder}`);
+
+      const failHtml = failed.length
+        ? `<br>⚠️ 失败 ${failed.length} 张：${failed.map(f => `${escapeHtml(f.name)}（${escapeHtml(f.err.slice(0, 30))}）`).join('，')}<br>请尝试把原图压缩后再传（建议单张 ≤ 5MB）。`
+        : '';
+      const photoPart = isMetaOnly
+        ? `✅ 相册信息已更新（未传照片）`
+        : `${appendMode ? '✅ 补传完成' : '✅ 上传完成'}：${results.length} 张照片${appendMode ? `（已续号为 ${String(startNum).padStart(2, '0')} 起）` : ''}`;
+      adminStatus(
+        `${photoPart} + 相册信息已发布到 GitHub。<br>` +
+        `jsDelivr 同步约 1–5 分钟，之后刷新页面即可看到「${escapeHtml(meta.title)}」。` +
+        failHtml,
+        failed.length === 0
+      );
+      adminFiles = [];
+      renderAdminFileList();
+      // 上传成功后自动刷新相册列表，让新相册立即可见（无需手动刷新页面）
+      setTimeout(() => { try { loadAlbums(); } catch { /* 刷新失败不影响上传结果 */ } }, 1500);
+    } catch (e) {
+      adminStatus(`❌ 上传失败：${escapeHtml(e.message)}`, false);
+    } finally {
+      const hasMetaInput = !!(elAdminTitle.value.trim() || elAdminLocation.value.trim() || elAdminDesc.value.trim());
+      elAdminUpload.disabled = adminFiles.length === 0 && !hasMetaInput;
+    }
   }
 
   /* ============================================================
@@ -798,10 +1326,59 @@
     window.addEventListener('resize', () => {
       if (state.map) state.map.resize();
     });
+
+    // 管理面板
+    elAdminFab.addEventListener('click', () => {
+      elAdminOverlay.hidden = false;
+      initAdmin();
+    });
+    elAdminClose.addEventListener('click', () => { elAdminOverlay.hidden = true; });
+    elAdminOverlay.addEventListener('click', (e) => {
+      if (e.target === elAdminOverlay) elAdminOverlay.hidden = true;
+    });
+    document.addEventListener('keydown', (e) => {
+      if (e.key === 'Escape' && !elAdminOverlay.hidden) elAdminOverlay.hidden = true;
+    });
+
+    elAdminTokenSave.addEventListener('click', () => {
+      const t = elAdminToken.value.trim();
+      if (!t) { adminStatus('密钥不能为空', false); return; }
+      localStorage.setItem(TOKEN_KEY, t);
+      GH.token = t;
+      elAdminTokenOk.textContent = '✓ 已保存';
+      elAdminTokenActions.hidden = false;
+      adminStatus('密钥已保存（仅存本机浏览器，不会上传服务器）', true);
+      // 保存后立即用新 token 重新拉取数据，无需手动刷新
+      try { loadAlbums(); } catch { /* 数据重载失败不影响密钥保存 */ }
+    });
+    elAdminTokenClear.addEventListener('click', () => {
+      localStorage.removeItem(TOKEN_KEY);
+      elAdminToken.value = '';
+      GH.token = '';
+      elAdminTokenActions.hidden = true;
+      adminStatus('密钥已清除', true);
+    });
+
+    elAdminFiles.addEventListener('change', () => {
+      adminFiles = [...elAdminFiles.files];
+      renderAdminFileList();
+      adminStatus('');
+    });
+    // 表单输入时刷新按钮状态（仅填信息不传照片也能上传）
+    [elAdminTitle, elAdminLocation, elAdminProvince, elAdminDesc].forEach((el) => {
+      el.addEventListener('input', () => { renderAdminFileList(); });
+      el.addEventListener('change', () => { renderAdminFileList(); });
+    });
+    elAdminUpload.addEventListener('click', doUpload);
   }
 
   /* ---------- 启动 ---------- */
   function init() {
+    // 页面加载时立即从 localStorage 恢复 token（供 fetchAllMeta / 设封面使用）
+    try {
+      const savedToken = localStorage.getItem(TOKEN_KEY);
+      if (savedToken) GH.token = savedToken;
+    } catch { /* localStorage 不可用时忽略 */ }
     applyBindings();
     bindEvents();
     if (CFG.demo) loadDemo();
