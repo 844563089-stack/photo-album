@@ -911,7 +911,22 @@
       const skel = card.querySelector('.skeleton');
       img.src = p.url;
       img.addEventListener('load', () => { img.classList.add('loaded'); skel.remove(); }, { once: true });
-      img.addEventListener('error', () => skel.remove(), { once: true });
+      // jsDelivr 边缘节点偶发失败时，自动重试一次 raw.githubusercontent.com 兜底；
+      // raw 仍失败才显示"加载失败"占位，避免单次网络抖动直接留 broken 图标。
+      img.addEventListener('error', () => {
+        if (!img.dataset.retried) {
+          img.dataset.retried = '1';
+          const rawPath = `${photosRoot()}/${album.folder}/${p.name}`;
+          const rawUrl = `https://raw.githubusercontent.com/${encodeURIComponent(GH.owner)}/${encodeURIComponent(GH.repo)}/${GH.branch || 'main'}/${rawPath}`;
+          img.src = rawUrl;
+          return;
+        }
+        skel.remove();
+        img.replaceWith(Object.assign(document.createElement('div'), {
+          textContent: '图片加载失败',
+          style: 'position:absolute;inset:0;display:grid;place-items:center;color:#777;font-size:12px;',
+        }));
+      });
       // 设封面按钮：阻止冒泡（不打开灯箱）
       const btn = card.querySelector('.photo-cover-btn');
       btn.addEventListener('click', (e) => {
