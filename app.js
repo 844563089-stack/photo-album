@@ -210,6 +210,81 @@
     return `https://cdn.jsdelivr.net/gh/${eo}/${er}@${branch}/${path}`;
   }
 
+  // 图片扩展名 → MIME（api.github.com base64 兜底时用）
+  function mimeOf(name) {
+    const e = extOf(name).toLowerCase();
+    if (e === '.png') return 'image/png';
+    if (e === '.webp') return 'image/webp';
+    if (e === '.gif') return 'image/gif';
+    if (e === '.avif') return 'image/avif';
+    if (e === '.heic' || e === '.heif') return 'image/heic';
+    return 'image/jpeg';
+  }
+
+  // 图片加载三重兜底：jsDelivr CDN → raw.githubusercontent.com → api.github.com(base64)
+  // 前两层都是"CDN/静态域名"，用户网络可能时通时断；api.github.com 是列表读取实测必通的通道，
+  // 作为最后兜底（用 localStorage 里的 token 可 5000/h，匿名 60/h 也够"少数失败图"用）。
+  // 全部失败才走 onFinalFail（默认显示占位文字）。
+  function attachImgFallback(img, skel, opts) {
+    const { primary, relPath, failText } = opts;
+    let step = 0;
+    const eo = encodeURIComponent(GH.owner);
+    const er = encodeURIComponent(GH.repo);
+    const br = encodeURIComponent(GH.branch || 'main');
+
+    // 先解绑旧监听（灯箱切换/卡片重渲染时会重复调用，避免 listener 累积）
+    if (img._detachFb) img._detachFb();
+
+    const finalFail = () => {
+      if (skel) skel.remove();
+      img.replaceWith(Object.assign(document.createElement('div'), {
+        textContent: failText || '图片加载失败',
+        style: 'position:absolute;inset:0;display:grid;place-items:center;color:#777;font-size:12px;',
+      }));
+    };
+
+    const onLoad = () => {
+      img.classList.add('loaded');
+      if (skel) skel.remove();
+    };
+    const onError = () => {
+      step++;
+      if (step === 1) {
+        // 第二层：raw 直连（绕过 jsDelivr 302/CDN 缓存问题）
+        img.src = `https://raw.githubusercontent.com/${eo}/${er}/${br}/${relPath}`;
+      } else if (step === 2) {
+        // 第三层：api.github.com Contents API 拿 base64 → data URL 直接显示
+        const token = localStorage.getItem('pa_token_v1') || GH.token;
+        const headers = token
+          ? { Authorization: `Bearer ${token}`, Accept: 'application/vnd.github+json' }
+          : { Accept: 'application/vnd.github+json' };
+        fetch(`https://api.github.com/repos/${eo}/${er}/contents/${relPath}`, { headers })
+          .then((r) => (r.ok ? r.json() : null))
+          .then((d) => {
+            if (d && d.content) {
+              const b64 = String(d.content).replace(/\s+/g, '');
+              img.src = `data:${mimeOf(relPath)};base64,${b64}`;
+            } else {
+              finalFail();
+            }
+          })
+          .catch(finalFail);
+      } else {
+        finalFail();
+      }
+    };
+
+    img.addEventListener('load', onLoad, { once: true });
+    img.addEventListener('error', onError);
+    img._detachFb = () => {
+      img.removeEventListener('load', onLoad);
+      img.removeEventListener('error', onError);
+      img._detachFb = null;
+    };
+
+    img.src = primary;
+  }
+
   // 省份名归一化（适配用户简写）
   const PROVINCE_MAP = {
     '北京': '北京市', '天津': '天津市', '上海': '上海市', '重庆': '重庆市',
@@ -642,29 +717,27 @@
     const skel = card.querySelector('.skeleton');
     const coverSrc = album.cover || '';
     const isDirectUrl = /^(https?:)?\/\/|\/|\.\.?\//.test(coverSrc);
-    img.src = coverSrc
-      ? (isDirectUrl ? coverSrc : imageUrl(`${photosRoot()}/${album.folder}/${coverSrc}`))
-      : '';
-
-    img.addEventListener('load', () => {
-      img.classList.add('loaded');
-      skel.remove();
-    }, { once: true });
-    // jsDelivr 边缘节点偶发失败时，自动重试一次 raw.githubusercontent.com 兜底；
-    // raw 仍失败才显示"加载失败"，避免单次网络抖动直接锁死。
-    img.addEventListener('error', () => {
-      if (!img.dataset.retried && !isDirectUrl && coverSrc) {
-        img.dataset.retried = '1';
-        const rawUrl = `https://raw.githubusercontent.com/${encodeURIComponent(GH.owner)}/${encodeURIComponent(GH.repo)}/${GH.branch || 'main'}/${photosRoot()}/${album.folder}/${encodeURIComponent(coverSrc)}`;
-        img.src = rawUrl;
-        return;
-      }
-      skel.remove();
-      img.replaceWith(Object.assign(document.createElement('div'), {
-        textContent: '封面加载失败',
-        style: 'position:absolute;inset:0;display:grid;place-items:center;color:#777;font-size:13px;',
-      }));
-    });
+    if (isDirectUrl || !coverSrc) {
+      // 封面是直接 URL 或空：不触发兜底链（避免无限重试或错误的 raw 回退）
+      img.src = coverSrc || '';
+      img.addEventListener('load', () => {
+        img.classList.add('loaded');
+        skel.remove();
+      }, { once: true });
+      img.addEventListener('error', () => {
+        skel.remove();
+        img.replaceWith(Object.assign(document.createElement('div'), {
+          textContent: '封面加载失败',
+          style: 'position:absolute;inset:0;display:grid;place-items:center;color:#777;font-size:13px;',
+        }));
+      }, { once: true });
+    } else {
+      attachImgFallback(img, skel, {
+        primary: imageUrl(`${photosRoot()}/${album.folder}/${coverSrc}`),
+        relPath: `${photosRoot()}/${album.folder}/${coverSrc}`,
+        failText: '封面加载失败',
+      });
+    }
 
     card.addEventListener('click', () => openAlbum(album.folder));
     card.addEventListener('keydown', (e) => {
@@ -863,6 +936,17 @@
       return;
     }
 
+    // 真实模式：直接用 loadAlbums 已从 git/trees 拿到的文件名列表拼 URL
+    // （不再调 api.github.com 列目录 —— 省限频配额 + 少一条失败路径；
+    //   图片加载失败时由 attachImgFallback 三重兜底：jsDelivr → raw → api base64）
+    if (album.photos && album.photos.length) {
+      photoState.items = album.photos.map((n) => ({ name: n, url: imageUrl(`${photosRoot()}/${folder}/${n}`) }));
+      elAlbumMeta.textContent = `共 ${photoState.items.length} 张照片 · ${formatDate(album.date)}`;
+      renderPhotoGrid(album);
+      return;
+    }
+
+    // 兜底：album.photos 为空才调 api.github.com 列目录
     elAlbumMeta.textContent = '加载中…';
     try {
       const url = `https://api.github.com/repos/${GH.owner}/${GH.repo}/contents/${photosRoot()}/${encodeURIComponent(folder)}`;
@@ -909,23 +993,10 @@
       `;
       const img = card.querySelector('img');
       const skel = card.querySelector('.skeleton');
-      img.src = p.url;
-      img.addEventListener('load', () => { img.classList.add('loaded'); skel.remove(); }, { once: true });
-      // jsDelivr 边缘节点偶发失败时，自动重试一次 raw.githubusercontent.com 兜底；
-      // raw 仍失败才显示"加载失败"占位，避免单次网络抖动直接留 broken 图标。
-      img.addEventListener('error', () => {
-        if (!img.dataset.retried) {
-          img.dataset.retried = '1';
-          const rawPath = `${photosRoot()}/${album.folder}/${p.name}`;
-          const rawUrl = `https://raw.githubusercontent.com/${encodeURIComponent(GH.owner)}/${encodeURIComponent(GH.repo)}/${GH.branch || 'main'}/${rawPath}`;
-          img.src = rawUrl;
-          return;
-        }
-        skel.remove();
-        img.replaceWith(Object.assign(document.createElement('div'), {
-          textContent: '图片加载失败',
-          style: 'position:absolute;inset:0;display:grid;place-items:center;color:#777;font-size:12px;',
-        }));
+      // 三重兜底：jsDelivr → raw → api.github.com base64（详情页照片默认走这个）
+      attachImgFallback(img, skel, {
+        primary: p.url,
+        relPath: `${photosRoot()}/${album.folder}/${p.name}`,
       });
       // 设封面按钮：阻止冒泡（不打开灯箱）
       const btn = card.querySelector('.photo-cover-btn');
@@ -1012,7 +1083,9 @@
 
   function renderLightbox() {
     const item = photoState.items[photoState.index];
-    elLbImg.src = item.url;
+    const relPath = `${photosRoot()}/${photoState.album}/${item.name}`;
+    // 大图同样三重兜底（jsDelivr → raw → api base64）
+    attachImgFallback(elLbImg, null, { primary: item.url, relPath });
     elLbImg.alt = item.name;
     elLbCurrent.textContent = photoState.index + 1;
     elLbTotal.textContent = photoState.items.length;
